@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\QuotaController;
 use App\Http\Controllers\Api\RendezVousController;
 use App\Http\Controllers\Api\TeamController;
@@ -7,16 +8,21 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| Routes API — tâche "Pinel — Données & API RDV"
+| Routes API — Pinel (RDV/équipe/quota) + Bilal (authentification)
 |--------------------------------------------------------------------------
-| À COLLER dans le routes/api.php du projet Laravel principal
-| (ne pas écraser les routes déjà existantes de Bilal pour l'auth WhatsApp).
-|
-| L'auth (Sanctum) est branchée par Bilal ; ici on suppose juste que
-| le middleware 'auth:sanctum' est disponible.
+| À COLLER dans le routes/api.php du projet Laravel principal.
 */
 
+// --- Authentification (tâche Bilal, publique) ---
+Route::post('register', [AuthController::class, 'register']);
+Route::post('login', [AuthController::class, 'login']);
+
 Route::middleware('auth:sanctum')->group(function () {
+
+    // --- Session (tâche Bilal) ---
+    Route::post('logout', [AuthController::class, 'logout']);
+    Route::get('me', [AuthController::class, 'me']);
+
 
     // --- Rendez-vous (CRUD complet) ---
     Route::apiResource('rendez-vous', RendezVousController::class);

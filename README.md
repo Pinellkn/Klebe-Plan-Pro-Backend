@@ -1,152 +1,292 @@
-# Klébé Plan Pro — Backend (tâche de Pinel)
+# Klébé Plan Pro — Backend
 
-Sprint V1.3 (23 → 31 août 2026). Basé sur `Klebe_Plan_Pro_Repartition_Taches.pdf`
-et `DOC-20260818-WA0015.pdf` (analyse stratégique).
+Assistant WhatsApp qui aide une entreprise à gérer les rendez-vous de son DG
+et à automatiser les rappels (veille 18h, jour J 8h, 15 min avant).
 
-**Ma tâche (Pinel — Données & API RDV) :**
-> Créer la structure de la base de données (rendez-vous, utilisateurs, quota) et
-> coder les endpoints pour créer/modifier/supprimer un rendez-vous, ainsi que la
-> gestion des permissions d'équipe.
+Backend Laravel 11 — tâches Pinel (données & API RDV) et Bilal (auth, WhatsApp,
+rappels, quota), Sprint V1.3 (23 → 31 août 2026).
 
-Base de données : MySQL en production, SQLite possible en dev local
-(`DB_CONNECTION=sqlite` dans `.env`, voir `.env.example`).
+---
 
-## ✅ Mes tâches terminées (Pinel)
+## 1. Stack technique
 
-**Structure de données**
-- [x] Migration `entreprises` (nom, téléphone DG, plan, **quota** : quota_mensuel,
-      quota_utilise, quota_packs_supplementaires, reset mensuel)
-- [x] Migration `users` (rattachés à une entreprise, **rôle** proprietaire/assistante
-      = base des permissions d'équipe) + password_reset_tokens + personal_access_tokens
-      (Sanctum, prêt pour que Bilal branche l'auth WhatsApp dessus)
-- [x] Migration `rendez_vous` (nom, date, heure, lieu, statut enrichi
-      planifie/confirme/reporte/annule/manque/termine, suivi des 3 rappels,
-      soft delete pour garder l'historique)
-- [x] Modèles Eloquent : `Entreprise` (avec `quotaRestant()` / `quotaAtteint()`),
-      `User` (avec `estProprietaire()`), `RendezVous`
+- PHP 8.2 (via XAMPP)
+- Laravel 11 (framework, artisan, sanctum pour l'auth API par token)
+- Base de données : **MySQL** (via XAMPP), nom de la base : `klebe_plan_pro`
+- Auth : Laravel Sanctum (tokens API, pas de session cookie)
 
-**API & sécurité**
-- [x] `RendezVousPolicy` : une assistante ne peut voir/modifier QUE les RDV de sa
-      propre entreprise (sécurité multi-tenant)
-- [x] `RendezVousController` : CRUD complet (index avec filtres statut/date +
-      pagination, show, store, update, destroy) — scopé par entreprise
-- [x] `TeamController` : liste équipe, ajouter une assistante, désactiver/réactiver,
-      retirer — réservé au rôle "proprietaire" (permissions d'équipe)
-- [x] `QuotaController` : lecture du quota restant (pour l'écran de Keira)
-- [x] Form Requests de validation : `StoreRendezVousRequest`,
-      `UpdateRendezVousRequest`, `AddTeamMemberRequest`
-- [x] `RendezVousResource` : format JSON stable pour le front
-- [x] Routes API (`routes/api.php`) prêtes à coller dans le projet principal
-- [x] `AuthServiceProvider` : enregistrement de la policy (fichier prêt à fusionner)
+---
+## 2. Prérequis pour lancer le projet
 
-**Qualité / mise en route**
-- [x] `database/factories` (Entreprise, User, RendezVous) pour générer des données de test
-- [x] `DemoSeeder` : jeu de données de démo pour brancher le front sans attendre
-      l'inscription (compte `proprietaire@demo.klebeplan.test` / `password`)
-- [x] `tests/Feature/RendezVousApiTest.php` : 6 tests (CRUD, isolation multi-tenant,
-      filtres, soft delete, permissions équipe, calcul du quota)
-- [x] `.env.example` avec la config MySQL (+ option SQLite pour dev local)
+- XAMPP installé et **démarré** (au minimum le module MySQL)
+- PHP disponible dans le PATH (`php -v` doit répondre)
+- Composer (si besoin de réinstaller les dépendances)
 
-## ⏳ Ce qu'il me reste à intégrer (Pinel — nécessite le vrai projet + terminal)
+---
 
-- [ ] Coller ces fichiers dans le vrai projet Laravel (voir "Intégration" ci-dessous)
-- [ ] Créer/compléter le `.env` avec les identifiants MySQL et lancer
-      `php artisan migrate --seed --seeder=DemoSeeder`
-- [ ] Fusionner `AuthServiceProvider.php` avec celui du projet principal s'il existe déjà
-- [ ] Lancer `php artisan test --filter=RendezVousApiTest` pour valider
-- [ ] Check-in du 27/08 : vérifier avec Shalom que le formulaire RDV du front
-      colle bien aux champs attendus par `StoreRendezVousRequest`
+## 3. Base de données
 
-## 🔧 Ce qui reste à faire par Bilal (WhatsApp & rappels)
-
-D'après la répartition des tâches, Bilal doit : *"Coder l'authentification, brancher
-l'API WhatsApp et programmer les 3 rappels automatiques (veille 18h, jour J 8h,
-15 min avant), plus le système de quota (comptage et blocage)."*
-
-Ce que j'ai déjà préparé côté données pour que ce soit simple à brancher :
-
-1. **Authentification** — la table `users` a déjà `role` (proprietaire/assistante)
-   et la table `personal_access_tokens` de Sanctum. Bilal doit :
-   - `composer require laravel/sanctum` si pas déjà fait, puis publier sa config
-   - Créer l'endpoint d'inscription : le PREMIER compte "proprietaire" doit créer
-     son `entreprise` en même temps que son `user` (je ne l'ai pas fait pour éviter
-     un conflit de code avec sa tâche auth)
-   - Créer les endpoints login/logout avec Sanctum
-
-2. **API WhatsApp & les 3 rappels automatiques** — la table `rendez_vous` a déjà
-   les colonnes de suivi des rappels (veille/jour J/15 min) et le statut enrichi
-   (planifie/confirme/reporte/annule/manque/termine). Bilal doit :
-   - Brancher l'API WhatsApp (récupérer les credentials, tester l'envoi)
-   - Créer un scheduler Laravel (`app/Console/Kernel.php`, tâche planifiée qui
-     tourne chaque minute) qui lit les `rendez_vous` à venir et envoie le bon
-     rappel au bon moment, puis marque le rappel comme envoyé
-   - Gérer les échecs d'envoi (retry, log) pour ne pas bloquer les autres rappels
-
-3. **Système de quota (comptage et blocage)** — la colonne `quota_utilise` et la
-   méthode `Entreprise::quotaAtteint()` existent déjà (utilisées par mon
-   `QuotaController` pour l'affichage côté Keira). Bilal doit uniquement :
-   - Incrémenter `quota_utilise` à chaque envoi WhatsApp réussi
-   - Vérifier `quotaAtteint()` AVANT d'envoyer un rappel, et bloquer l'envoi si
-     le quota est dépassé (avec notification claire à l'assistante, comme
-     recommandé dans l'analyse stratégique)
-
-Une fois ces 3 points faits, la V1.3 sera complète côté rappels + auth.
-
-## Intégration dans le projet Laravel principal
-
-1. Copier `database/migrations/*`, `database/factories/*`, `database/seeders/DemoSeeder.php`
-   → mêmes dossiers du projet
-2. Copier `app/Models/*`, `app/Http/Controllers/Api/*`, `app/Http/Requests/*`,
-   `app/Http/Resources/*`, `app/Policies/*`, `tests/Feature/RendezVousApiTest.php`
-   aux mêmes emplacements
-3. Ajouter le contenu de `routes/api.php` (ici) dans le `routes/api.php` existant
-4. Dans `app/Providers/AuthServiceProvider.php` du projet principal, fusionner le
-   tableau `$policies` (voir fichier fourni ici — ne pas écraser si un provider existe déjà) :
-   ```php
-   protected $policies = [
-       \App\Models\RendezVous::class => \App\Policies\RendezVousPolicy::class,
-   ];
-   ```
-5. `composer require laravel/sanctum` si pas déjà fait (Bilal s'en occupe pour l'auth)
-6. Fusionner `.env.example` dans le `.env` réel
-7. `php artisan migrate --seed --seeder=DemoSeeder`
-
-## Endpoints créés
-
-| Méthode | Route | Description |
-|---|---|---|
-| GET | `/api/rendez-vous` | Liste (filtres `?statut=`, `?date=`) |
-| GET | `/api/rendez-vous/{id}` | Détail |
-| POST | `/api/rendez-vous` | Créer |
-| PUT/PATCH | `/api/rendez-vous/{id}` | Modifier |
-| DELETE | `/api/rendez-vous/{id}` | Supprimer (soft delete) |
-| GET | `/api/equipe` | Liste des membres de l'entreprise |
-| POST | `/api/equipe` | Ajouter une assistante (proprietaire uniquement) |
-| PATCH | `/api/equipe/{id}/desactiver` | Désactiver un membre |
-| PATCH | `/api/equipe/{id}/reactiver` | Réactiver un membre |
-| DELETE | `/api/equipe/{id}` | Retirer un membre |
-| GET | `/api/quota` | Quota restant de l'entreprise |
-
-## Arborescence de ce dossier
+### 3.1 Configuration actuelle (`.env`)
 
 ```
-Klebe-Plan-Pro-Backend/
-├── .env.example
-├── README.md
-├── app/
-│   ├── Http/{Controllers/Api, Requests, Resources}/
-│   ├── Models/
-│   ├── Policies/
-│   └── Providers/AuthServiceProvider.php
-├── database/
-│   ├── factories/
-│   ├── migrations/
-│   └── seeders/DemoSeeder.php
-├── routes/api.php
-└── tests/Feature/RendezVousApiTest.php
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=klebe_plan_pro
+DB_USERNAME=root
+DB_PASSWORD=
+```
+
+C'est la configuration par défaut d'un MySQL XAMPP fraîchement installé
+(utilisateur `root`, sans mot de passe). Si votre MySQL a un mot de passe
+root différent, mettez-le à jour dans `DB_PASSWORD`.
+
+### 3.2 Fichier `klebe_plan_pro.sql`
+
+Un export complet de la base (structure + données de démo) se trouve à la
+racine du projet : **`klebe_plan_pro.sql`**.
+
+**Pour importer cette base sur une autre machine / un autre poste :**
+
+Option A — via phpMyAdmin :
+1. Ouvrir `http://localhost/phpmyadmin`
+2. Créer une base nommée `klebe_plan_pro` (collation `utf8mb4_unicode_ci`)
+3. Onglet "Importer" → choisir le fichier `klebe_plan_pro.sql` → Exécuter
+
+Option B — en ligne de commande :
+```
+C:\xampp\mysql\bin\mysql.exe -u root -e "CREATE DATABASE klebe_plan_pro CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+C:\xampp\mysql\bin\mysql.exe -u root klebe_plan_pro < klebe_plan_pro.sql
+```
+
+### 3.3 Reconstruire la base à partir des migrations (alternative)
+
+Si vous préférez repartir de zéro plutôt que d'importer le `.sql` :
+
+```
+php artisan migrate:fresh
+php artisan db:seed --class=DemoSeeder
+```
+
+### 3.4 Tables
+
+| Table       | Contenu |
+|-------------|---------|
+| `entreprises` | Une entreprise cliente : plan (essentiel/business), quota mensuel, quota utilisé, packs supplémentaires |
+| `users`       | Comptes (propriétaire ou assistante), rattachés à une entreprise |
+| `rendez_vous` | Les RDV du DG : nom, date, heure, lieu, statut, notes, horodatage des 3 rappels envoyés |
+
+Statuts possibles d'un rendez-vous (`rendez_vous.statut`) :
+`planifie`, `confirme`, `reporte`, `annule`, `manque`, `termine`.
+
+---
+
+## 4. Comptes de démonstration
+
+Ces comptes sont créés par `DemoSeeder` (entreprise "Cabinet Démo SARL",
+plan business, 8 rendez-vous factices déjà générés).
+
+| Rôle | Email | Mot de passe |
+|------|-------|---------------|
+| Propriétaire (DG / admin) | `proprietaire@demo.klebeplan.test` | `password` |
+| Assistante | `assistante@demo.klebeplan.test` | `password` |
+
+Le mot de passe `password` est défini dans `database/factories/UserFactory.php`
+(hashé en base avec Laravel `Hash::make`). Pensez à changer ces comptes avant
+toute mise en production.
+
+---
+
+## 5. Lancer le serveur
+
+```
+php artisan serve
+```
+→ API disponible sur `http://127.0.0.1:8000`
+
+Pour que les rappels WhatsApp partent automatiquement, le scheduler Laravel
+doit tourner en continu (voir section 7).
+
+---
+
+## 6. Routes API (`routes/api.php`)
+
+Toutes les routes renvoient du JSON. Authentification par token Sanctum
+(header `Authorization: Bearer {token}`), sauf `register` et `login`.
+
+### Authentification (publique)
+| Méthode | Route | Description |
+|---|---|---|
+| POST | `/api/register` | Créer un compte + entreprise |
+| POST | `/api/login` | Se connecter, récupérer un token |
+
+### Session (authentifié)
+| Méthode | Route | Description |
+|---|---|---|
+| POST | `/api/logout` | Déconnexion (révoque le token) |
+| GET  | `/api/me` | Infos de l'utilisateur connecté |
+
+### Rendez-vous (authentifié, CRUD complet)
+| Méthode | Route | Description |
+|---|---|---|
+| GET | `/api/rendez-vous` | Liste des RDV de l'entreprise |
+| POST | `/api/rendez-vous` | Créer un RDV |
+| GET | `/api/rendez-vous/{id}` | Détail d'un RDV |
+| PUT/PATCH | `/api/rendez-vous/{id}` | Modifier un RDV |
+| DELETE | `/api/rendez-vous/{id}` | Supprimer un RDV |
+
+### Équipe (authentifié — gestion des assistantes)
+| Méthode | Route | Description |
+|---|---|---|
+| GET | `/api/equipe` | Liste des membres de l'entreprise |
+| POST | `/api/equipe` | Ajouter un membre |
+| PATCH | `/api/equipe/{membre}/desactiver` | Désactiver un membre |
+| PATCH | `/api/equipe/{membre}/reactiver` | Réactiver un membre |
+| DELETE | `/api/equipe/{membre}` | Retirer un membre |
+
+### Quota (authentifié, lecture seule)
+| Méthode | Route | Description |
+|---|---|---|
+| GET | `/api/quota` | Quota mensuel : total, utilisé, restant |
+
+---
+
+## 7. Rappels WhatsApp automatiques
+
+Commande artisan : `php artisan rappels:envoyer`
+(fichier : `app/Console/Commands/EnvoyerRappelsWhatsApp.php`)
+
+Elle vérifie, à chaque exécution, quels rendez-vous ont un rappel dû
+**pile à ce moment** (veille 18h, jour J 8h, 15 min avant) et n'envoie
+que ceux-là — en respectant le quota de messages de l'entreprise.
+
+Le `Kernel` (`app/Console/Kernel.php`) programme cette commande pour
+tourner **toutes les minutes** :
+
+```php
+$schedule->command('rappels:envoyer')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->runInBackground();
+```
+
+**Pour que ça fonctionne en continu**, le scheduler Laravel doit être
+lancé (localement, pour du dev) :
+
+```
+php artisan schedule:work
+```
+
+En production, on configure plutôt une tâche planifiée (cron / tâche
+planifiée Windows) qui appelle `php artisan schedule:run` chaque minute.
+
+---
+
+## 8. Configuration WhatsApp (à compléter)
+
+Dans `.env` :
+
+```
+WHATSAPP_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_API_VERSION=v21.0
+```
+
+Ces trois valeurs sont **vides pour l'instant**. Tant qu'elles ne sont
+pas renseignées, `rappels:envoyer` tourne sans erreur mais n'envoie
+aucun message réel (0 envoyés). Le service qui les utilise est
+`app/Services/WhatsAppService.php`.
+
+Pour les obtenir : créer une app WhatsApp Business sur Meta for
+Developers, récupérer le token d'accès et l'ID du numéro de téléphone.
+
+---
+
+## 9. Gestion du quota
+
+Chaque entreprise (`entreprises`) a :
+- `quota_mensuel` : messages inclus dans son plan (Essentiel = 500, Business = 2 500)
+- `quota_utilise` : messages déjà envoyés ce mois-ci
+- `quota_packs_supplementaires` : nombre de packs de 100 messages achetés en plus
+- `quota_reinitialise_le` : date de la prochaine remise à zéro du compteur
+
+Quota restant = `quota_mensuel + (quota_packs_supplementaires × 100) − quota_utilise`
+(voir `Entreprise::quotaRestant()` et `Entreprise::quotaAtteint()`).
+
+Quand le quota est atteint, l'envoi est bloqué (visible dans le résultat
+de `rappels:envoyer` : compteur "bloqués (quota)").
+
+---
+
+## 10. Commandes utiles (récap)
+
+```
+# Installer les dépendances
+composer install
+
+# Générer la clé d'application (si besoin)
+php artisan key:generate
+
+# Vider les caches de config (après modif du .env)
+php artisan config:clear
+
+# Rejouer les migrations depuis zéro + re-seed
+php artisan migrate:fresh --seed --seeder=DemoSeeder
+
+# Lancer le serveur de dev
+php artisan serve
+
+# Lancer le scheduler (rappels automatiques)
+php artisan schedule:work
+
+# Envoyer manuellement les rappels dus maintenant (test)
+php artisan rappels:envoyer
 ```
 
 ---
-*Dernière mise à jour : 25 août 2026 — tâche Pinel complète côté code. README
-réorganisé pour lister mes tâches faites et détailler ce qui reste à Bilal
-(authentification, rappels WhatsApp, quota).*
+
+## 11. Structure du code
+
+```
+app/
+  Console/Commands/EnvoyerRappelsWhatsApp.php   → commande des 3 rappels
+  Http/Controllers/Api/
+    AuthController.php        → register / login / logout / me
+    RendezVousController.php  → CRUD des rendez-vous
+    TeamController.php        → gestion de l'équipe (assistantes)
+    QuotaController.php       → lecture du quota
+  Http/Requests/               → validation des formulaires (RDV, équipe, auth)
+  Http/Resources/RendezVousResource.php  → format JSON des RDV
+  Models/
+    Entreprise.php   → plan, quota
+    User.php          → propriétaire / assistante
+    RendezVous.php    → statut, rappels envoyés
+  Policies/RendezVousPolicy.php  → permissions par entreprise
+  Services/WhatsAppService.php   → appel à l'API WhatsApp
+database/
+  migrations/   → structure des 3 tables
+  factories/    → génération de données de test
+  seeders/DemoSeeder.php  → jeu de données de démo
+routes/api.php  → toutes les routes ci-dessus
+klebe_plan_pro.sql  → export complet de la base MySQL (structure + données)
+```
+
+---
+
+## 12. État actuel / à faire
+
+✅ Fait :
+- Squelette Laravel complet installé
+- Migrations + modèles + contrôleurs + routes API (RDV, équipe, quota, auth)
+- Base de données basculée sur MySQL (XAMPP), export `.sql` fourni à la racine
+- Comptes de démo créés et fonctionnels
+
+⏳ À faire :
+- Renseigner les vraies credentials WhatsApp dans `.env`
+- Vérifier/verrouiller les règles de calcul du quota et des packs
+  (voir points soulevés dans l'analyse stratégique : prix des packs,
+  ce qui consomme exactement une unité de quota)
+- Ajouter les actions de suivi de RDV (confirmer, reporter, annuler)
+  prévues pour la V1.x de la trajectoire produit
+- Basculer `APP_DEBUG=false` et sécuriser le `.env` avant toute mise
+  en production
